@@ -1,0 +1,87 @@
+# Schutzregeln fuer Apache-Webserver.
+#
+# Ohne diese Datei waeren auf einem oeffentlichen Server unter anderem
+# abrufbar: der Gemini-API-Key aus .env, die komplette Rezeptdatenbank unter
+# data/rezeptbuch.sqlite und das Fehlerlog. Der lokale PHP-Entwicklungsserver
+# ignoriert diese Datei, sie stoert dort also nicht.
+#
+# Laeuft dein Hoster mit nginx statt Apache, wirkt sie NICHT. Dann gehoeren
+# entsprechende location-Bloecke in die Serverkonfiguration.
+
+# --- Schreibschutz --------------------------------------------------------
+# Lesen bleibt fuer alle offen: stoebern, Rezepte ansehen, kochen.
+# Alles was aendert, loescht oder KI-Kosten verursacht, verlangt ein Passwort.
+#
+# Aktivieren mit:  ./scripts/set-edit-password.sh
+# Abschalten mit:  ./scripts/set-edit-password.sh --off
+#
+# Die Zeilen zwischen den beiden Markern schaltet das Skript um. Bitte die
+# Marker nicht entfernen.
+#
+# BEGIN Schreibschutz
+<FilesMatch "^(admin\.php|delete-recipe\.php|delete-category\.php|add-category\.php|save-recipe\.php|save-thermomix-conversion\.php|update-recipe\.php|update-plan\.php|update-plan-print-model\.php|update-shopping-list\.php|upload-plan-template\.php|confirm-plan\.php|generate-plan\.php|rate-recipe\.php|parse-text\.php|parse-image\.php|parse-url\.php|url-import\.php|convert-to-thermomix\.php|generate-shopping-list\.php|generate-plan-print\.php|process-plan-print-job\.php)$">
+    AuthType Basic
+    AuthName "Bearbeiten"
+    # ABSOLUTEN Pfad zur .htpasswd eintragen. Relative Pfade funktionieren
+    # nicht. Den Pfad zeigt der Dateimanager deines Hosters an, alternativ
+    # liefert ihn ein <?php echo __DIR__; ?> in einer Testdatei.
+    AuthUserFile /absoluter/pfad/zur/app/.htpasswd
+    Require valid-user
+</FilesMatch>
+# END Schreibschutz
+
+# --- Passwortschutz für die ganze Seite -----------------------------------
+# Die App kennt keine Benutzerverwaltung. Ohne diese Sperre kann jeder, der
+# die Adresse kennt, Rezepte loeschen und die KI-Importe auf deine
+# API-Kosten ausloesen.
+#
+# Aktivieren:
+#   1. Auf dem Rechner eine Passwortdatei erzeugen:
+#        htpasswd -c ~/htpasswd-rezepte deinname
+#   2. Die Datei per FTP hochladen, moeglichst AUSSERHALB des oeffentlichen
+#      Verzeichnisses (also nicht in public_html/httpdocs).
+#   3. Die folgenden vier Zeilen entkommentieren und den Pfad eintragen.
+#
+# AuthType Basic
+# AuthName "Rezeptbuch"
+# AuthUserFile /absoluter/pfad/ausserhalb/webroot/.htpasswd
+# Require valid-user
+
+# --- Punktdateien komplett sperren (.env, .gitignore, deploy.env) ---------
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# --- Datenbank, Logs, Konfiguration und Markdown --------------------------
+<FilesMatch "\.(sqlite|sqlite3|db|log|json|md|sh|dist|bak|zip|tar|gz|sql)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# --- Verzeichnisse, die nie direkt aufgerufen werden ----------------------
+RedirectMatch 404 ^/(data|tests|scripts)(/|$)
+
+# --- Kein Verzeichnislisting ----------------------------------------------
+Options -Indexes
+
+# --- Verstecktes: PHP-Version nicht ausplaudern ---------------------------
+<IfModule mod_headers.c>
+    Header unset X-Powered-By
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "same-origin"
+</IfModule>
+
+# Hinweis: rezepte/images/ bleibt bewusst erreichbar, von dort holt die
+# Rezeptansicht die Bilder.

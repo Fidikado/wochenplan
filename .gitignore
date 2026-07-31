@@ -1,0 +1,20 @@
+# Zugangsdaten - niemals committen
+.env
+deploy.env
+.htpasswd
+
+# Laufzeitdaten. data/rezeptbuch.sqlite bleibt bewusst versioniert,
+# damit die Demo-Rezepte mitkommen.
+/data/legacy-backup/
+/data/logs/
+/data/print-jobs/
+/data/prints/
+/data/templates/
+
+# Selbst angelegte Rezepte und hochgeladene Bilder gehoeren dem Betreiber
+/rezepte/
+
+# Werkzeuge und Betriebssystem
+/.claude/
+.DS_Store
+Thumbs.db
