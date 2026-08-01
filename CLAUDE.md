@@ -110,7 +110,9 @@ When touching the parsers, add a case to `tests/cook-utils.test.php` first.
 
 ### Gemini / KI pipeline
 
-`api/gemini.php` wraps all Gemini calls. The plan-print export is async: `generate-plan-print.php` starts a background job, `get-plan-print-status.php` is polled by the frontend, and `process-plan-print-job.php` does the actual work.
+`api/gemini.php` wraps all Gemini calls. The plan-print export looks async to the frontend: `generate-plan-print.php` only **creates** the job and returns, `get-plan-print-status.php` is polled every 2s, and the first poll that claims the job also runs it — `plan_print_claim_job()` takes an exclusive `flock` for the `queued → running` transition so two parallel polls cannot spend the Gemini quota twice.
+
+Do **not** turn this back into a background process. It used to spawn one via `exec()`, which is disabled on most shared hosting: the job was created and then sat in `data/print-jobs/` forever while the frontend reported "Print-Job konnte nicht gestartet werden". `process-plan-print-job.php` still exists as a CLI entry point for running a job by hand.
 
 Image-model selection lives in `plan_print_resolve_image_model()` / `plan_print_available_models()` in `api/plan-print-lib.php`. It maps retired preview aliases to current GA IDs (default `gemini-3.1-flash-image`) and returns a **fallback chain** — the resolved model, then `gemini-2.5-flash-image`; `gemini_generate_content()` walks that list and tries the next entry on HTTP 404/429/403. When Google renames or retires a model, update the alias map and the available-models list there — the saved value in `app_settings` may still hold an old ID. `plan_print_image_config()` adds `imageSize => 2K` only for the 3.x models, so it needs the concrete model (`$imageModels[0]`), not the chain. Text-model defaults are in `config.php` (`GEMINI_MODEL`, comma-separated fallback list). Do not set `maxOutputTokens` on image requests — a generated image costs ~1300 output tokens and a low cap silently suppresses the image.
 

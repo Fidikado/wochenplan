@@ -24,6 +24,32 @@ if ($job === null) {
     exit;
 }
 
+// Hier wird der Job auch bearbeitet, nicht nur abgefragt: auf Shared Hosting
+// ist exec() meist gesperrt, ein Hintergrundprozess laesst sich nicht starten.
+// Der erste Poll, der den Job beansprucht, macht die Arbeit und antwortet erst
+// danach - alle weiteren Polls sehen ihn als running und warten normal weiter.
+if (($job['status'] ?? '') === 'queued' && plan_print_claim_job($config, $jobId)) {
+    // Ein geschlossener Tab darf den Job nicht auf halbem Weg abschneiden.
+    ignore_user_abort(true);
+    @set_time_limit(0);
+
+    try {
+        plan_print_process_job($config, $jobId);
+    } catch (Throwable $e) {
+        // plan_print_process_job() hat den Fehler bereits in die Jobdatei
+        // geschrieben; sie wird gleich neu gelesen und ausgeliefert.
+        if (function_exists('codex_log')) {
+            codex_log('error', [
+                'type' => 'print_job_failed',
+                'job_id' => $jobId,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    $job = plan_print_read_job($config, $jobId) ?? $job;
+}
+
 $response = [
     'success' => true,
     'job_id' => $jobId,

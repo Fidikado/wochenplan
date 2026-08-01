@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-01
+
+### Wochenplan-Export ohne Hintergrundprozess
+- **Behoben**: Der Bild-Export brach mit "Print-Job konnte nicht gestartet werden" ab, sobald `exec()` gesperrt war — auf Shared Hosting der Normalfall. Der Job wurde angelegt und blieb dann unbearbeitet in `data/print-jobs/` liegen.
+- `api/generate-plan-print.php` legt den Job jetzt nur noch an. Bearbeitet wird er vom ersten Status-Poll in `api/get-plan-print-status.php`, es braucht also keinen Unterprozess mehr.
+- `plan_print_claim_job()` haelt dabei einen exklusiven `flock` ueber den Uebergang `queued -> running`, damit zwei gleichzeitige Polls denselben Job nicht doppelt starten und die Gemini-Quote nicht zweimal kosten.
+- `ignore_user_abort()` sorgt dafuer, dass ein geschlossener Tab einen laufenden Job nicht auf halbem Weg abschneidet.
+- Am Frontend aendert sich nichts: es pollt weiterhin alle 2 Sekunden mit 5 Minuten Gesamtbudget.
+- `api/process-plan-print-job.php` bleibt als CLI-Einstieg erhalten, um einen Job von Hand nachzuziehen.
+- Neue Tests in `tests/plan-print-job.test.php`.
+
 ## 2026-07-27
 
 ### Kochmodus
