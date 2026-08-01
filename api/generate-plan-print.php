@@ -11,12 +11,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 }
 
 try {
+    // Nur anlegen, nicht ausfuehren. Die Arbeit erledigt der erste Status-Poll
+    // in get-plan-print-status.php - ein Hintergrundprozess ist auf Shared
+    // Hosting nicht startbar, weil exec() dort gesperrt ist.
     $context = plan_print_collect_context($config);
     $job = plan_print_create_job($config, $context);
-    $spawned = plan_print_spawn_background_job((string)$job['id']);
-    if (!$spawned) {
-        throw new RuntimeException('Print-Job konnte nicht gestartet werden');
-    }
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['error' => $e->getMessage()]);

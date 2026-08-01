@@ -380,48 +380,63 @@ function plan_print_image_config(string $orientationLabel, string $model): array
     return $config;
 }
 
-function plan_print_spawn_background_job(string $jobId): bool {
+/**
+ * Beansprucht einen wartenden Job fuer die Bearbeitung im laufenden Request.
+ *
+ * Frueher startete generate-plan-print.php per exec() einen eigenen
+ * PHP-Prozess. Auf Shared Hosting ist exec() regelmaessig gesperrt - dann
+ * wurde der Job zwar angelegt, aber nie bearbeitet. Stattdessen holt sich
+ * jetzt der erste Status-Poll den Job hier ab.
+ *
+ * Der Lock haelt den Uebergang queued -> running exklusiv: zwei gleichzeitige
+ * Polls duerfen denselben Job nicht doppelt starten, sonst kostet er zweimal
+ * Gemini-Quote. Wer den Lock nicht bekommt, bekommt false und pollt weiter.
+ */
+function plan_print_claim_job(array $config, string $jobId): bool {
     if (!plan_print_is_valid_job_id($jobId)) {
         return false;
     }
 
-    $phpBinary = PHP_BINARY !== '' ? PHP_BINARY : 'php';
-    $phpBinaryName = strtolower(basename($phpBinary));
-    if (str_contains($phpBinaryName, 'php-fpm')) {
-        $candidates = [
-            PHP_BINDIR . '/php',
-            '/usr/bin/php8.3',
-            '/usr/bin/php',
-        ];
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate) && is_executable($candidate)) {
-                $phpBinary = $candidate;
-                break;
-            }
-        }
-    }
-
-    $script = __DIR__ . '/process-plan-print-job.php';
-    $logFile = __DIR__ . '/../data/logs/php-server.err.log';
-    $cmd = escapeshellarg($phpBinary) . ' '
-        . escapeshellarg($script) . ' '
-        . escapeshellarg($jobId)
-        . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
-
-    if (!function_exists('exec')) {
+    $handle = @fopen(plan_print_job_file($config, $jobId), 'r+');
+    if ($handle === false) {
         return false;
     }
 
-    if (function_exists('codex_log')) {
-        codex_log('info', [
-            'type' => 'print_job_spawn',
-            'job_id' => $jobId,
-            'php_binary' => $phpBinary,
-        ]);
-    }
+    try {
+        if (!flock($handle, LOCK_EX | LOCK_NB)) {
+            return false;
+        }
 
-    exec($cmd, $output, $exitCode);
-    return $exitCode === 0;
+        $job = json_decode((string)stream_get_contents($handle), true);
+        if (!is_array($job) || ($job['status'] ?? '') !== 'queued') {
+            return false;
+        }
+
+        $job['status'] = 'running';
+        $job['updated_at'] = date('Y-m-d H:i:s');
+        $json = json_encode($job, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+        if ($json === false) {
+            return false;
+        }
+
+        rewind($handle);
+        if (!ftruncate($handle, 0) || fwrite($handle, $json) === false) {
+            return false;
+        }
+        fflush($handle);
+
+        if (function_exists('codex_log')) {
+            codex_log('info', [
+                'type' => 'print_job_claimed',
+                'job_id' => $jobId,
+            ]);
+        }
+
+        return true;
+    } finally {
+        @flock($handle, LOCK_UN);
+        fclose($handle);
+    }
 }
 
 function plan_print_create_job(array $config, array $context): array {
